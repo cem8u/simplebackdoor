@@ -47,11 +47,11 @@ Normally, to copy a vector we check its sizes to make sure that the vectors are 
 
 To test this, I created a simple program, vectorOverflow.rs. There are three vectors, First, Second, Third. When we copy Third into Second the following happens:
 
-![Before SECRETKEY](http://imgur.com/NJgnxQV)
+![Before SECRETKEY](http://i.imgur.com/NJgnxQV.png)
 
 We get an error because the length of Second is less than the length of Third. This is the appropriate behavior we would expect. However, let's now execute the program in the following manner: `./vectorOverflow SECRETKEY`:
 
-![After SECRETKEY](http://imgur.com/XTxOAeH)
+![After SECRETKEY](http://i.imgur.com/XTxOAeH.png)
 
 We now don't get an error. Third is completely copied into Second. However, since Second is smaller, the contents of Third overflow to First! The particularly interesting thing as well is that First is supposed to be an immutable variable, meaning that once set it cannot be modified.  
 
